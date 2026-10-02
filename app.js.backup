@@ -1,0 +1,165 @@
+const $ = (s, root=document) => root.querySelector(s);
+const $$ = (s, root=document) => [...root.querySelectorAll(s)];
+const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+const dateKey = d => d.toISOString().slice(0,10);
+const today = () => dateKey(new Date());
+const fmt = n => Math.round(Number(n)||0);
+const esc = s => String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+
+const foods = [
+  ['Atta',364,12,60],['Paneer',265,18,120],['Low-fat paneer',170,22,150],['Potato',77,2,120],
+  ['Cauliflower',25,1.9,250],['French beans',31,1.8,250],['Rajma dry',333,24,70],['Chana dry',364,19,70],
+  ['Pumpkin',26,1,330],['Dal dry',350,24,60],['Rice raw',365,7,50],['Besan',387,22,80],
+  ['Moong dal dry',347,24,80],['Suji',360,12,75],['Curd',63,3.5,200],['Greek yogurt',70,9,200],
+  ['Toned milk',58,3.1,250],['Protein powder',390,75,32],['High-protein muesli',380,25,50],
+  ['Cucumber',15,.7,225],['Onion + tomato',35,1.3,150],['Oil',884,0,5],['Tofu',144,17,150],
+  ['Soy chunks dry',345,52,50],['Uttapam batter',160,5,170],['Sambar',60,3,200],['Roasted chana',370,20,30],
+  ['Buttermilk',40,3,250],['Banana',89,1.1,100],['Apple',52,.3,180]
+].map(([name,kcal,protein,defaultGrams])=>({name,kcal,protein,defaultGrams}));
+
+const dinnerPresets = [
+  ['Paneer sabji + 2 roti + cucumber',[['Paneer',120],['Onion + tomato',150],['Oil',5],['Atta',60],['Cucumber',225]]],
+  ['Aloo gobi + curd + 2 roti',[['Potato',120],['Cauliflower',250],['Oil',5],['Atta',60],['Curd',200],['Cucumber',225]]],
+  ['Aloo beans + curd + 2 roti',[['Potato',100],['French beans',250],['Oil',5],['Atta',60],['Curd',200],['Cucumber',225]]],
+  ['Rajma + 2 roti + cucumber',[['Rajma dry',70],['Onion + tomato',150],['Oil',5],['Atta',60],['Cucumber',225]]],
+  ['Chole + 2 roti + cucumber',[['Chana dry',70],['Onion + tomato',150],['Oil',5],['Atta',60],['Cucumber',225]]],
+  ['Pumpkin + curd + 2 roti',[['Pumpkin',330],['Oil',5],['Atta',60],['Curd',200],['Cucumber',225]]],
+  ['Aloo bhujia + curd + 2 roti',[['Potato',150],['Onion + tomato',75],['Oil',5],['Atta',60],['Curd',200],['Cucumber',225]]],
+  ['Dal chawal + cucumber',[['Dal dry',60],['Rice raw',50],['Oil',5],['Cucumber',225]]],
+  ['Kadhi chawal + cucumber',[['Curd',250],['Besan',30],['Rice raw',50],['Oil',5],['Cucumber',225]]]
+];
+
+const defaults = {
+  profile:{name:'Garvit',age:23,sex:'male',heightCm:164,weightKg:97,goalWeightKg:80,calorieTarget:1900,proteinTarget:120,waterTargetMl:3000},
+  logs:{}, tab:'today', selectedDate:today(), recipeNames:['Paneer','Onion + tomato','Oil','Atta','Cucumber'], recipeTarget:700,
+  customFoods:[]
+};
+let state = load();
+
+function load(){
+  try { const raw=localStorage.getItem('cutos-state'); return raw ? {...structuredClone(defaults),...JSON.parse(raw)} : structuredClone(defaults); }
+  catch { return structuredClone(defaults); }
+}
+function save(){ localStorage.setItem('cutos-state',JSON.stringify(state)); }
+function day(date=state.selectedDate){ if(!state.logs[date]) state.logs[date]={food:[],workouts:[],waterMl:0,steps:0}; return state.logs[date]; }
+function foodDef(name){ return [...foods,...state.customFoods].find(x=>x.name===name); }
+function calories(item){ return item.grams*item.kcal/100; }
+function protein(item){ return item.grams*item.protein/100; }
+function dayTotals(d=day()){ return {kcal:d.food.reduce((s,x)=>s+calories(x),0),protein:d.food.reduce((s,x)=>s+protein(x),0)}; }
+function mondayOf(date){ const d=new Date(date+'T12:00:00'); const dow=(d.getDay()+6)%7; d.setDate(d.getDate()-dow); return d; }
+function weekDates(){ const m=mondayOf(state.selectedDate); return Array.from({length:7},(_,i)=>{const x=new Date(m);x.setDate(m.getDate()+i);return dateKey(x)}); }
+function logFood(name, grams, meal='Dinner'){
+  const f=foodDef(name); if(!f) return;
+  day().food.push({id:uid(),name:f.name,grams:Number(grams),kcal:f.kcal,protein:f.protein,meal}); save(); toast('Food logged'); render();
+}
+function logPreset(index){ dinnerPresets[index][1].forEach(([name,grams])=>{ const f=foodDef(name); day().food.push({id:uid(),name,grams,kcal:f.kcal,protein:f.protein,meal:'Dinner'});}); save(); toast('Dinner added'); render(); }
+function toast(msg){ const el=document.createElement('div'); el.className='toast'; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),1800); }
+function setTab(t){ state.tab=t; save(); render(); window.scrollTo({top:0,behavior:'smooth'}); }
+function percent(v,t){ return Math.min(100,Math.max(0,Math.round((v/t)*100)||0)); }
+function ring(v,t,label,unit){ const p=percent(v,t); return `<div class="ringCard"><div class="ring" style="--pct:${p*3.6}deg"><div><strong>${fmt(v)}</strong><span>${unit}</span></div></div><div><b>${label}</b><small>${p}% of ${t}${unit}</small></div></div>`; }
+function nav(){ return `<nav class="bottomNav">${[['today','◉','Today'],['food','◒','Food'],['workout','▲','Train'],['week','▦','Week'],['progress','↗','Progress'],['settings','⚙','Setup']].map(([id,icon,label])=>`<button data-tab="${id}" class="${state.tab===id?'active':''}"><span>${icon}</span><small>${label}</small></button>`).join('')}</nav>`; }
+function header(){ return `<header class="topbar"><div><div class="brand">Cut<span>OS</span></div><div class="tagline">Fat-loss control center</div></div><button class="dateChip" id="todayBtn">${state.selectedDate===today()?'Today':state.selectedDate}</button></header>`; }
+function sectionHead(kicker,title,aside=''){return `<div class="pageHead"><div><p class="eyebrow">${kicker}</p><h1>${title}</h1></div>${aside}</div>`;}
+
+function todayView(){
+  const d=day(), t=dayTotals(d), p=state.profile;
+  const score=fmt((Math.min(t.kcal/p.calorieTarget,1)*.45+Math.min(t.protein/p.proteinTarget,1)*.35+Math.min(d.waterMl/p.waterTargetMl,1)*.2)*100);
+  const meals=['Breakfast','Lunch','Snack','Dinner'].map(m=>{const arr=d.food.filter(x=>x.meal===m), k=arr.reduce((s,x)=>s+calories(x),0);return `<div class="mealRow"><div><b>${m}</b><small>${arr.length?esc(arr.map(x=>x.name).join(', ')):'Nothing logged'}</small></div><span>${fmt(k)} kcal</span></div>`}).join('');
+  const workouts=d.workouts.length?d.workouts.map(w=>`<div class="mealRow"><div><b>${w.type}</b><small>${esc(w.detail)}</small></div><span>${w.minutes} min</span></div>`).join(''):'<div class="empty">No workout yet. Even a brisk walk counts.</div>';
+  let coachTitle='You are inside the plan.', coach='Keep dinner measured, get your movement done, and finish the day consistently.';
+  if(t.protein<p.proteinTarget*.65){coachTitle='Protein is the gap today.';coach='Use your protein shake, curd, paneer, tofu or soy to close the gap without adding another carb-heavy meal.'}
+  else if(t.kcal>p.calorieTarget){coachTitle='One higher day does not break the week.';coach='Do not starve tomorrow. The Week tab spreads recovery gently across the remaining days.'}
+  return `<section class="hero card"><div><p class="eyebrow">DAY CONTROL</p><h1>Stay in the game,<br>not in perfection.</h1><p>${Math.max(0,fmt(p.calorieTarget-t.kcal))} kcal left · ${Math.max(0,fmt(p.proteinTarget-t.protein))}g protein to go</p></div><div class="score"><span>${score}</span><small>day score</small></div></section>
+  <section class="rings">${ring(t.kcal,p.calorieTarget,'Calories',' kcal')}${ring(t.protein,p.proteinTarget,'Protein','g')}${ring(d.waterMl,p.waterTargetMl,'Water','ml')}</section>
+  <section class="grid2"><div class="card"><div class="sectionTitle"><h2>Meals</h2><button data-tab="food">Add</button></div>${meals}</div><div class="card"><div class="sectionTitle"><h2>Movement</h2><button data-tab="workout">Log</button></div>${workouts}<div class="quickWater"><button data-water="250">+ 250 ml water</button><button data-water="500">+ 500 ml</button></div></div></section>
+  <section class="coach card"><div class="coachOrb">✦</div><div><p class="eyebrow">COACH</p><h3>${coachTitle}</h3><p>${coach}</p></div></section>`;
+}
+
+function foodView(){
+  const d=day();
+  const quick=[...foods,...state.customFoods].slice(0,30).map((f,i)=>`<button class="quickFood" data-quick="${esc(f.name)}"><b>${esc(f.name)}</b><small>${f.defaultGrams}g · ${fmt(f.defaultGrams*f.kcal/100)} kcal</small></button>`).join('');
+  const presets=dinnerPresets.map((p,i)=>{let k=0,pr=0;p[1].forEach(([n,g])=>{const f=foodDef(n);k+=g*f.kcal/100;pr+=g*f.protein/100});return `<button class="preset" data-preset="${i}"><div><b>${p[0]}</b><small>${p[1].map(([n,g])=>`${g}g ${n}`).join(' · ')}</small></div><div><strong>${fmt(k)}</strong><span>kcal</span><small>${fmt(pr)}g P</small></div></button>`}).join('');
+  const pick=[...foods,...state.customFoods].map(f=>`<label class="${state.recipeNames.includes(f.name)?'selected':''}"><input type="checkbox" data-recipe-name="${esc(f.name)}" ${state.recipeNames.includes(f.name)?'checked':''}>${esc(f.name)}</label>`).join('');
+  const sugg=recipeSuggestion();
+  const logged=d.food.length?d.food.map(x=>`<div class="logRow"><div><b>${esc(x.name)}</b><small>${x.meal} · ${x.grams}g · ${fmt(protein(x))}g P</small></div><span>${fmt(calories(x))} kcal</span><button data-remove-food="${x.id}">×</button></div>`).join(''):'<div class="empty">Nothing logged yet.</div>';
+  return `${sectionHead('FOOD LAB','Log, build, balance.',`<input class="dateInput" id="dateInput" type="date" value="${state.selectedDate}">`)}
+  <section class="card"><div class="sectionTitle"><div><h2>Quick add staples</h2><p>Tap a food, then choose the meal.</p></div></div><div class="foodChips">${quick}</div></section>
+  <section class="card"><div class="sectionTitle"><div><h2>Your dinner presets</h2><p>Raw weights, including measured oil.</p></div></div><div class="presetList">${presets}</div></section>
+  <section class="card builder"><div class="sectionTitle"><div><h2>Recipe Weight Assistant</h2><p>Select raw ingredients and CutOS scales sensible starting weights toward your meal target.</p></div></div><div class="ingredientPicker">${pick}</div><div class="targetRow"><label>Meal calorie target<input id="recipeRange" type="range" min="350" max="900" step="25" value="${state.recipeTarget}"></label><strong>${state.recipeTarget} kcal</strong></div><div class="suggestionBox"><div class="macroHeadline"><span><b>${fmt(sugg.kcal)}</b> kcal</span><span><b>${fmt(sugg.protein)}</b>g protein</span></div>${sugg.items.map(x=>`<div class="mealRow"><b>${x.name}</b><span>${x.grams} g raw</span></div>`).join('')}<button class="primary" id="addSuggested">Add this recipe to dinner</button></div></section>
+  <section class="card customBox"><div class="sectionTitle"><div><h2>Add a new ingredient</h2><p>Use the packet label or a reliable nutrition source.</p></div></div><div class="customGrid"><input id="newName" placeholder="Ingredient name"><input id="newKcal" type="number" placeholder="kcal / 100g"><input id="newProtein" type="number" step="0.1" placeholder="protein / 100g"><input id="newDefault" type="number" placeholder="usual raw grams"><button class="primary" id="addCustomFood">Save ingredient</button></div></section>
+  <section class="card"><div class="sectionTitle"><h2>Logged on ${state.selectedDate}</h2></div>${logged}</section>`;
+}
+
+function recipeSuggestion(){
+  const defs=state.recipeNames.map(foodDef).filter(Boolean); if(!defs.length)return {items:[],kcal:0,protein:0};
+  const base=defs.reduce((s,d)=>s+d.defaultGrams*d.kcal/100,0); const scale=Math.max(.45,Math.min(1.8,state.recipeTarget/Math.max(1,base)));
+  const items=defs.map(d=>({...d,grams:Math.max(5,Math.round(d.defaultGrams*scale/5)*5)}));
+  return {items,kcal:items.reduce((s,x)=>s+x.grams*x.kcal/100,0),protein:items.reduce((s,x)=>s+x.grams*x.protein/100,0)};
+}
+
+function workoutView(){
+  return `${sectionHead('TRAINING','Build the habit before the gym.')}
+  <section class="workoutGrid"><button class="workCard" data-work="Walk|40|Brisk outdoor/indoor walk"><span>🚶</span><b>Brisk walk</b><small>40 min · low impact</small></button><button class="workCard" data-work="Stairs|10|Controlled 6-floor repeats; walk down slowly"><span>↗</span><b>Stairs</b><small>10 min starter block</small></button><button class="workCard" data-work="Strength|35|Squat · RDL · row · press · incline push-up · plank"><span>◼</span><b>Full-body DB</b><small>35 min · 3–4 kg</small></button><button class="workCard" data-work="Walk|20|Easy recovery walk"><span>☁</span><b>Recovery</b><small>20 min easy</small></button></section>
+  <section class="card"><div class="sectionTitle"><div><h2>Custom workout</h2><p>Log anything else without pretending exercise calories are exact.</p></div></div><div class="customGrid"><select id="customType"><option>Walk</option><option>Stairs</option><option>Strength</option><option>Custom</option></select><input id="customMinutes" type="number" placeholder="minutes"><input id="customDetail" placeholder="what you did"><button class="primary" id="addCustomWorkout">Log workout</button></div></section>
+  <section class="card"><div class="sectionTitle"><div><h2>Your 18-day ramp</h2><p>Condition first. Gym when you reach home.</p></div></div><div class="timeline"><div><span>01</span><b>Days 1–5</b><p>30–45 min brisk walk + 5–10 min stairs. Strength 3×/week.</p></div><div><span>02</span><b>Days 6–10</b><p>35–50 min walk + 10–15 min stairs. Add reps or backpack load.</p></div><div><span>03</span><b>Days 11–18</b><p>40–60 min walk + 15–20 min stairs if joints feel good. Keep 3 strength sessions.</p></div></div></section>
+  <section class="card"><div class="sectionTitle"><h2>Full-body template</h2></div>${['Chair squat — 3 × 12–15','Dumbbell Romanian deadlift — 3 × 12–15','One-arm row — 3 × 12–15 / side','Shoulder press — 3 × 10–15','Incline / wall push-up — 3 good sets','Biceps curl — 2 × 15–20','Overhead triceps extension — 2 × 15–20','Calf raise — 3 × 20','Plank — 3 × 20–40 sec'].map(x=>`<div class="exercise">${x}</div>`).join('')}</section>`;
+}
+
+function weekView(){
+  const p=state.profile, dates=weekDates();
+  const consumed=dates.reduce((sum,d)=>sum+(state.logs[d]?.food||[]).reduce((s,x)=>s+calories(x),0),0);
+  const elapsed=dates.filter(d=>d<=today()).length, remain=Math.max(1,7-elapsed), planSoFar=p.calorieTarget*elapsed, diff=consumed-planSoFar;
+  const target=p.calorieTarget*7, raw=(target-consumed)/remain, safe=Math.max(p.calorieTarget*.85,Math.min(p.calorieTarget,raw));
+  const dayButtons=dates.map(d=>{const k=(state.logs[d]?.food||[]).reduce((s,x)=>s+calories(x),0);const wd=new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short'});return `<button data-date="${d}" class="${d===state.selectedDate?'active':''}"><small>${wd}</small><b>${fmt(k)}</b><span>kcal</span></button>`}).join('');
+  return `${sectionHead('WEEK CONTROL','One day can’t ruin a week.')}
+  <section class="card weeklyHero"><div><small>WEEKLY BUDGET</small><h2>${fmt(consumed)} / ${target} kcal</h2><div class="bar"><i style="width:${Math.min(100,consumed/target*100)}%"></i></div></div><div class="weekStat"><span>${diff>0?'+':''}${fmt(diff)}</span><small>vs plan so far</small></div></section>
+  <section class="card"><div class="sectionTitle"><div><h2>Cheat / social meal recovery</h2><p>Enter the extra calories above your normal plan. CutOS caps compensation at 15% below target.</p></div></div><div class="cheatBox"><input id="cheatInput" type="number" min="0" placeholder="e.g. 900 extra kcal"><div><b id="cheatTarget">${fmt(safe)} kcal/day</b><small>suggested remaining-day target</small></div></div><p class="note">Do not skip entire meals or punish yourself with cardio. Return to protein, vegetables, measured carbs, water and normal activity.</p></section>
+  <section class="weekDays">${dayButtons}</section>`;
+}
+
+function progressView(){
+  const p=state.profile, weights=Object.keys(state.logs).sort().map(d=>state.logs[d].weightKg).filter(x=>typeof x==='number'), bmi=p.weightKg/((p.heightCm/100)**2);
+  const spark=weights.length?sparkline(weights):'<div class="emptyChart">Log morning weight to see your trend.</div>';
+  return `${sectionHead('PROGRESS','Trend, don’t obsess.')}
+  <section class="grid2"><div class="card"><small>CURRENT WEIGHT</small><h2 class="bigNum">${p.weightKg.toFixed(1)}<span>kg</span></h2><div class="weightInput"><input id="weightInput" type="number" step="0.1" placeholder="Morning weight"></div></div><div class="card"><small>GOAL</small><h2 class="bigNum">${p.goalWeightKg}<span>kg</span></h2><p>${Math.max(0,p.weightKg-p.goalWeightKg).toFixed(1)} kg remaining. BMI is ${bmi.toFixed(1)}, but weekly weight trend, waist and fitness are more useful day-to-day indicators.</p></div></section>
+  <section class="card"><div class="sectionTitle"><h2>Weight trend</h2></div>${spark}</section>
+  <section class="card"><div class="sectionTitle"><h2>Progress rules</h2></div><div class="rules"><div><b>1</b><span>Weigh 3–4 mornings/week under similar conditions.</span></div><div><b>2</b><span>Judge the 7-day average, not a single spike.</span></div><div><b>3</b><span>If the average does not move for 2–3 weeks, adjust food/activity slightly.</span></div></div></section>`;
+}
+function sparkline(values){ const min=Math.min(...values),max=Math.max(...values),span=Math.max(1,max-min);const pts=values.map((v,i)=>`${(i/Math.max(1,values.length-1))*100},${44-((v-min)/span)*38}`).join(' ');return `<svg class="spark" viewBox="0 0 100 50" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2.5" vector-effect="non-scaling-stroke"></polyline></svg>`; }
+
+function settingsView(){ const p=state.profile; const fields=[['Name','name','text'],['Age','age','number'],['Height (cm)','heightCm','number'],['Current weight (kg)','weightKg','number'],['Goal weight (kg)','goalWeightKg','number'],['Daily calories','calorieTarget','number'],['Daily protein (g)','proteinTarget','number'],['Water target (ml)','waterTargetMl','number']]; return `${sectionHead('SETUP','Your targets, editable.')}
+<section class="card settingsForm">${fields.map(([label,key,type])=>`<label><span>${label}</span><input data-profile="${key}" type="${type}" value="${esc(p[key])}"></label>`).join('')}</section>
+<section class="card"><h2>Important</h2><p>This is a planning and logging tool, not a medical diagnosis tool. Nutrition values are estimates and brands vary. If you have medical conditions, take medication, or develop persistent pain, dizziness, chest symptoms or unusual breathlessness, get professional medical advice before pushing exercise or dieting harder.</p><button class="danger" id="resetBtn">Reset all local data</button></section>`; }
+
+function render(){
+  const views={today:todayView,food:foodView,workout:workoutView,week:weekView,progress:progressView,settings:settingsView};
+  $('#app').innerHTML=`<div class="appShell">${header()}<main>${views[state.tab]()}</main>${nav()}</div>`;
+  bind();
+}
+
+function bind(){
+  $$('[data-tab]').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+  $('#todayBtn')?.addEventListener('click',()=>{state.selectedDate=today();save();render();});
+  $('#dateInput')?.addEventListener('change',e=>{state.selectedDate=e.target.value;save();render();});
+  $$('[data-water]').forEach(b=>b.onclick=()=>{day().waterMl+=Number(b.dataset.water);save();render();});
+  $$('[data-quick]').forEach(b=>b.onclick=()=>{
+    const name=b.dataset.quick, f=foodDef(name); const meal=prompt(`Add ${name} to which meal?\nBreakfast, Lunch, Snack or Dinner`, name.includes('muesli')?'Breakfast':name.includes('Protein')?'Snack':'Lunch')||'Lunch';
+    const grams=Number(prompt(`Raw/serving grams for ${name}`,f.defaultGrams)); if(grams>0) logFood(name,grams,['Breakfast','Lunch','Snack','Dinner'].includes(meal)?meal:'Lunch');
+  });
+  $$('[data-preset]').forEach(b=>b.onclick=()=>logPreset(Number(b.dataset.preset)));
+  $$('[data-remove-food]').forEach(b=>b.onclick=()=>{day().food=day().food.filter(x=>x.id!==b.dataset.removeFood);save();render();});
+  $$('[data-recipe-name]').forEach(c=>c.onchange=()=>{const n=c.dataset.recipeName;if(c.checked&&!state.recipeNames.includes(n))state.recipeNames.push(n);if(!c.checked)state.recipeNames=state.recipeNames.filter(x=>x!==n);save();render();});
+  $('#recipeRange')?.addEventListener('input',e=>{state.recipeTarget=Number(e.target.value);save();render();});
+  $('#addSuggested')?.addEventListener('click',()=>{const s=recipeSuggestion();s.items.forEach(x=>{day().food.push({id:uid(),name:x.name,grams:x.grams,kcal:x.kcal,protein:x.protein,meal:'Dinner'});});save();toast('Suggested recipe added');render();});
+  $('#addCustomFood')?.addEventListener('click',()=>{const name=$('#newName').value.trim(),k=Number($('#newKcal').value),p=Number($('#newProtein').value),g=Number($('#newDefault').value);if(!name||k<=0||g<=0)return toast('Complete the ingredient fields');state.customFoods.push({name,kcal:k,protein:p||0,defaultGrams:g});save();toast('Ingredient saved');render();});
+  $$('[data-work]').forEach(b=>b.onclick=()=>{const [type,minutes,detail]=b.dataset.work.split('|');day().workouts.push({id:uid(),type,minutes:Number(minutes),detail,date:state.selectedDate});save();toast('Workout logged');render();});
+  $('#addCustomWorkout')?.addEventListener('click',()=>{const type=$('#customType').value,minutes=Number($('#customMinutes').value),detail=$('#customDetail').value.trim()||'Custom session';if(minutes<=0)return toast('Add workout minutes');day().workouts.push({id:uid(),type,minutes,detail,date:state.selectedDate});save();toast('Workout logged');render();});
+  $$('[data-date]').forEach(b=>b.onclick=()=>{state.selectedDate=b.dataset.date;save();render();});
+  $('#cheatInput')?.addEventListener('input',e=>{const extra=Number(e.target.value)||0,p=state.profile,dates=weekDates(),elapsed=dates.filter(d=>d<=today()).length,remain=Math.max(1,7-elapsed);const suggested=Math.max(p.calorieTarget*.85,Math.min(p.calorieTarget,p.calorieTarget-extra/remain));$('#cheatTarget').textContent=`${fmt(suggested)} kcal/day`;});
+  $('#weightInput')?.addEventListener('change',e=>{const v=Number(e.target.value);if(v>0){day().weightKg=v;state.profile.weightKg=v;save();toast('Weight logged');render();}});
+  $$('[data-profile]').forEach(i=>i.onchange=()=>{const k=i.dataset.profile;state.profile[k]=i.type==='number'?Number(i.value):i.value;save();render();});
+  $('#resetBtn')?.addEventListener('click',()=>{if(confirm('Clear all CutOS data on this device?')){localStorage.removeItem('cutos-state');state=structuredClone(defaults);render();}});
+}
+
+render();
+if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{})); }

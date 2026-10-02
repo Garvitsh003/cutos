@@ -1,0 +1,9 @@
+{
+  "name": "CutOS — Fat Loss Control Center",
+  "short_name": "CutOS",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "description": "Phone-first food, workout, weight and weekly fat-loss tracker."
+}
