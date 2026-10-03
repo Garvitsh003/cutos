@@ -2,6 +2,7 @@
 (()=>{
 'use strict';
 const {merge,equal,copy,validate}=window.CutOSSyncCore;
+const arrivedFromEmail=/access_token=|error_description=/.test(window.location.hash);
 const META='cutos-cloud-meta-v1',RECOVERY='cutos-cloud-recovery-v1';
 const config=window.CUTOS_SYNC_CONFIG||{};
 const publicKey=(()=>{const key=config.publishableKey||'';if(key.startsWith('sb_publishable_'))return true;try{return JSON.parse(atob(key.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).role==='anon';}catch{return false;}})();
@@ -67,7 +68,7 @@ async function sync(){
 async function identify(session){
  const next=session?.user||null;
  if(next?.id===user?.id)return;
- user=next;conflict=null;initialRow=null;pendingApply=null;
+ user=next;conflict=null;initialRow=null;pendingApply=null;if(user&&arrivedFromEmail)state.tab='settings';
  if(!user){phase=configured?'signedout':'unconfigured';message('Saved on this browser · sign in to sync');repaint();return;}
  if(meta&&(meta.owner!==user.id||meta.project!==config.url)){phase='accountMismatch';message('This browser is linked to another account or project. Its data has not been uploaded.');repaint();return;}
  if(bound()){phase='ready';message('Checking your saved account data…');repaint();schedule();return;}
@@ -97,7 +98,7 @@ async function resolveConflict(prefer){
 function panel(){
  let body='';
  if(phase==='unconfigured')body='<p>Cloud sync needs its one-time connection setup. Your existing data is still saved on this browser. Download a backup now.</p>';
- else if(!user)body=`<p>Use the same email on your laptop and phone.</p><form id="cs-email-form"><label>Email<input id="cs-email" type="email" autocomplete="email" required value="${esc(email)}"></label><button type="submit">Send sign-in code</button></form><form id="cs-code-form"><label>Email code<input id="cs-code" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6,10}" required placeholder="Code from your email"></label><button type="submit">Sign in</button></form>`;
+ else if(!user)body=`<p>Use the same email on your laptop and phone.</p><form id="cs-email-form"><label>Email<input id="cs-email" type="email" autocomplete="email" required value="${esc(email)}"></label><button type="submit">Email me a sign-in link</button></form><p>No password or code needed. Open the emailed link to sign in. For your first upload, use the laptop browser that holds your meals.</p>`;
  else {
   body=`<p>Signed in as <b>${esc(user.email||'your account')}</b></p>`;
   if(phase==='migration')body+=initialRow?'<p>Your account already has data. Download this browser’s backup before loading it. To keep extra entries from this browser, save the backup and import it after connecting.</p><button id="cs-load" class="primary">Load my account data</button>':'<p>Start on your laptop, where your existing meals are stored. This uploads meals, workouts, ingredients, targets and drafts. A backup download starts first.</p><button id="cs-upload" class="primary">Upload this browser’s data</button>';
@@ -119,8 +120,7 @@ bind=function(){previousBind();if(state.tab!=='settings')return;
  $('#cs-backup')?.addEventListener('click',()=>backup());
  $('#cs-original')?.addEventListener('click',()=>{const raw=localStorage.getItem('cutos-original-before-cloud-v1');if(raw)backup(JSON.parse(raw),'before-cloud');else backup();});
  $('#cs-email')?.addEventListener('input',ev=>email=ev.target.value);
- $('#cs-email-form')?.addEventListener('submit',async ev=>{ev.preventDefault();if(!client)return;email=$('#cs-email').value.trim();try{const {error}=await client.auth.signInWithOtp({email});if(error)throw error;message('Code requested. Check your email, then enter it below.');}catch(error){message('Could not send code: '+error.message);}});
- $('#cs-code-form')?.addEventListener('submit',async ev=>{ev.preventDefault();if(!client)return;try{const {data,error}=await client.auth.verifyOtp({email:email.trim(),token:$('#cs-code').value.trim(),type:'email'});if(error)throw error;await identify(data.session);}catch(error){message('Could not sign in: '+error.message);}});
+ $('#cs-email-form')?.addEventListener('submit',async ev=>{ev.preventDefault();if(!client)return;email=$('#cs-email').value.trim();try{const {error}=await client.auth.signInWithOtp({email,options:{emailRedirectTo:window.location.origin+window.location.pathname}});if(error)throw error;message('Sign-in link sent. Open the newest email link on this device, in the browser you use for CutOS.');}catch(error){message('Could not send sign-in link: '+error.message);}});
  $('#cs-upload')?.addEventListener('click',uploadExisting);$('#cs-load')?.addEventListener('click',loadAccount);$('#cs-sync')?.addEventListener('click',()=>sync());
  $('#cs-local')?.addEventListener('click',()=>resolveConflict('local'));$('#cs-cloud')?.addEventListener('click',()=>resolveConflict('cloud'));
  $('#cs-retry')?.addEventListener('click',async()=>{const {data,error}=await client.auth.getSession();if(error)return message(error.message);user=null;await identify(data.session);});
@@ -137,7 +137,7 @@ const syncedSave=save;save=function(){if(multiTab)throw Error('Reload this tab t
 setInterval(()=>{if(!document.hidden)schedule();},15000);
 async function start(){
  if(!configured){repaint();return;}
- try{if(!window.supabase)throw Error('Sign-in library unavailable. Reconnect to the internet and reload.');client=window.supabase.createClient(config.url,config.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
+ try{if(!window.supabase)throw Error('Sign-in library unavailable. Reconnect to the internet and reload.');client=window.supabase.createClient(config.url,config.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:'implicit'}});
   client.auth.onAuthStateChange((_event,session)=>setTimeout(()=>identify(session),0));
   const {data,error}=await client.auth.getSession();if(error)throw error;await identify(data.session);if(!data.session){phase='signedout';message('Saved on this browser · sign in to sync');repaint();}
  }catch(error){phase='signedout';message('Connection unavailable: '+error.message);repaint();}
