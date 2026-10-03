@@ -668,7 +668,7 @@ function catalogue(){return [...foods.map((f,i)=>({...nutrition(f),ref:'b:'+i}))
 function snapshot(f,g){return {...nutrition(f),id:uid(),grams:g||f.defaultGrams||100,unknownNutrients:keys.filter(k=>rawN(nutrition(f),k)===null)};}
 function groups(){
  const map=new Map();
- day().food.forEach(x=>{const id=x.mealId||'legacy:'+x.meal;if(!map.has(id))map.set(id,{id,name:x.mealName||x.meal||'Meal',meal:x.meal||'Dinner',items:[]});map.get(id).items.push(x);});
+ day().food.forEach(x=>{const id=x.mealId||'legacy:'+x.meal;if(!map.has(id))map.set(id,{id,name:x.mealName||x.meal||'Meal',meal:x.meal||'Dinner',mealTime:x.mealTime||'',items:[]});map.get(id).items.push(x);});
  return [...map.values()];
 }
 function write(change){
@@ -680,29 +680,33 @@ function changeDraft(fn){return write(()=>fn(draft()));}
 function putDraft(d){return write(()=>{state.mealDrafts=state.mealDrafts||{};state.mealDrafts[state.selectedDate]=d;});}
 function makeDraft(g){
  if(draft()&&!confirm('Replace your unfinished meal draft?'))return;
- const d=g?{...structuredClone(g),editing:g.id,items:g.items.map(nutrition)}:{id:uid(),name:'',meal:'Dinner',items:[]};
+ const d=g?{...structuredClone(g),editing:g.id,detailsSaved:true,items:g.items.map(nutrition)}:{id:uid(),name:'',meal:'Dinner',mealTime:localTime(),detailsSaved:false,items:[]};
  if(putDraft(d))render();
 }
 function macroHTML(items){const t=totals(items);return `<div class="mf-macros">${keys.map(k=>`<div><span>${labels[k]}</span><strong>${show(t[k].value)}${k==='kcal'?'':'<small> g</small>'}</strong><small>${t[k].missing?`${t[k].missing} missing · subtotal`:k==='kcal'?'kcal':'total'}</small></div>`).join('')}</div>`;}
 function warning(items){const ks=keys.filter(k=>totals(items)[k].missing);return ks.length?`<p class="mf-warning">${ks.map(k=>labels[k]).join(', ')} incomplete. Missing values are excluded; these are known subtotals.</p>`:'';}
 let libraryOpen=false;
+const localTime=()=>{const now=new Date();return String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');};
+const detailsReady=d=>d.detailsSaved===true||(d.detailsSaved===undefined&&(d.editing||d.items.length>0));
+function mealDetailsHTML(d){return `<section class="card mf-editor"><div class="sectionTitle"><div><p class="eyebrow">STEP 1 OF 2</p><h2>Tell us about your meal</h2></div><button id="mf-discard">Cancel</button></div><form id="mf-details-form"><div class="mf-meal-meta"><label class="mf-span">Meal name<input id="mf-name" required maxlength="100" value="${e(d.name)}" placeholder="e.g. Paneer bhurji with roti"></label><label>Meal type<select id="mf-type">${['Breakfast','Lunch','Snack','Dinner'].map(m=>`<option ${d.meal===m?'selected':''}>${m}</option>`).join('')}</select></label><label>Meal time<input id="mf-time" type="time" required value="${e(d.mealTime||localTime())}"></label></div><p class="mf-hint">Save these details, then add your ingredients and amounts.</p><button type="submit" class="primary mf-wide">Save & add ingredients</button></form></section>`;}
+
 function mealView(){
  const d=draft(), list=groups();
  return `${sectionHead('FOOD · MEALS','What did you eat?',`<label class="mf-date">Date<input id="dateInput" class="dateInput" aria-label="Food log date" type="date" value="${e(state.selectedDate)}"></label>`)}
- <section class="card mf-day"><div class="sectionTitle"><h2>Today’s food${state.selectedDate===today()?'':` · ${e(state.selectedDate)}`}</h2><button id="mf-library">Ingredients</button></div>${macroHTML(day().food.map(nutrition))}${warning(day().food.map(nutrition))}</section>
+ <section class="card mf-day"><div class="sectionTitle"><h2>Today’s food${state.selectedDate===today()?'':` · ${e(state.selectedDate)}`}</h2></div>${macroHTML(day().food.map(nutrition))}${warning(day().food.map(nutrition))}</section>
  ${d?editorHTML(d):`<button class="primary mf-wide" id="mf-new">+ Add a meal</button>`}
- <section class="mf-meals"><div class="sectionTitle"><h2>Saved meals <small>${list.length}</small></h2></div>${list.length?list.map(g=>`<article class="card mf-saved"><div class="sectionTitle"><div><p class="eyebrow">${e(g.meal)}</p><h3>${e(g.name)}</h3></div><button data-mf-edit="${e(g.id)}">Edit meal</button></div><p>${g.items.length} ingredients · ${e(g.items.map(title).join(', '))}</p>${macroHTML(g.items.map(nutrition))}${warning(g.items.map(nutrition))}<button class="mf-delete" data-mf-delete="${e(g.id)}">Delete meal</button></article>`).join(''):'<div class="card empty">Your meals will appear here. Start with a meal name, then add what went into it.</div>'}</section>
+ <section class="mf-meals"><div class="sectionTitle"><h2>Saved meals <small>${list.length}</small></h2></div>${list.length?list.map(g=>`<article class="card mf-saved"><div class="sectionTitle"><div><p class="eyebrow">${e(g.meal)}${g.mealTime?' · '+e(g.mealTime):''}</p><h3>${e(g.name)}</h3></div><button data-mf-edit="${e(g.id)}">Edit meal</button></div><p>${g.items.length} ingredients · ${e(g.items.map(title).join(', '))}</p>${macroHTML(g.items.map(nutrition))}${warning(g.items.map(nutrition))}<button class="mf-delete" data-mf-delete="${e(g.id)}">Delete meal</button></article>`).join(''):'<div class="card empty">Your meals will appear here. Start with a meal name, then add what went into it.</div>'}</section>
  <details class="card mf-help"><summary>Dinner presets & portion assistant</summary><p>Load a preset into the meal editor, adjust the weights, then save when ready.</p><div class="mf-presets">${dinnerPresets.map((p,i)=>`<button data-mf-preset="${i}">${e(p[0])}</button>`).join('')}</div></details>
- ${libraryOpen?libraryHTML():''}`;
+ `;
 }
-function editorHTML(d){return `<section class="card mf-editor"><div class="sectionTitle"><div><p class="eyebrow">${d.editing?'EDIT MEAL':'NEW MEAL'}</p><h2>Build your plate</h2></div><button id="mf-discard">${d.editing?'Cancel':'Discard'}</button></div>
- <div class="mf-meal-meta"><label>Meal name<input id="mf-name" value="${e(d.name)}" placeholder="e.g. Paneer bhurji with roti" maxlength="100"></label><label>Meal time<select id="mf-type">${['Breakfast','Lunch','Snack','Dinner'].map(m=>`<option ${d.meal===m?'selected':''}>${m}</option>`).join('')}</select></label></div>
+function editorHTML(d){if(!detailsReady(d))return mealDetailsHTML(d);return `<section class="card mf-editor"><div class="sectionTitle"><div><p class="eyebrow">STEP 2 OF 2 · ${e(d.meal)}${d.mealTime?' · '+e(d.mealTime):''}</p><h2>${e(d.name)}</h2></div><button id="mf-edit-details">Edit details</button></div><p class="mf-hint">Meal details saved. Search for each ingredient, enter its amount, then add it.</p>
+ ${ingredientPickerHTML()}
  <div class="mf-ingredients">${d.items.map((x,i)=>`<article class="mf-row"><div class="mf-row-head"><div><b>${e(title(x))}</b><small id="mf-row-info-${i}">${rowInfo(x)}</small></div><button data-mf-remove="${i}" aria-label="Remove ${e(title(x))}">×</button></div><div class="mf-row-controls"><label>Amount (${unit(x)})<input data-mf-weight="${i}" inputmode="decimal" type="number" min="0.1" step="any" value="${e(x.grams)}"></label><button data-mf-nutrition="${i}">Edit nutrition</button></div></article>`).join('')||'<p class="empty">Add your ingredients below. Weigh them in the same form as the nutrition entry: dry, raw, or cooked.</p>'}</div>
- <button class="mf-add" id="mf-add">+ Add ingredient</button>
+
  <details class="mf-portion"><summary>Suggest weights for this meal</summary><p>Scales the current ingredient proportions to your calorie target. Review oil and serving sizes before using it.</p><label>Meal target (kcal)<input id="mf-target" type="number" min="100" max="2000" value="650"></label><button id="mf-scale">Suggest weights</button></details>
- <div class="mf-live" id="mf-live" aria-live="polite">${macroHTML(d.items)}${warning(d.items)}</div><p class="mf-hint">Draft saved on this browser. Only saved meals count toward your day.</p><button class="primary mf-wide" id="mf-save">${d.editing?'Save changes':'Save meal'}</button></section>`;}
+ <div class="mf-live" id="mf-live" aria-live="polite">${macroHTML(d.items)}${warning(d.items)}</div><p class="mf-hint">Ingredients are saved as you go. Finish the meal to add its totals to your day.</p><button class="primary mf-wide" id="mf-save">${d.editing?'Save changes':'Finish meal'}</button><button id="mf-discard" class="mf-delete">Discard changes</button></section>`;}
 function rowInfo(x){const t=totals([x]);return `${valid(x.kcal)?show(t.kcal.value)+' kcal':'Calories missing'} · ${valid(x.protein)?show(t.protein.value)+' g protein':'Protein missing'}${keys.some(k=>rawN(x,k)===null)?' · incomplete nutrition':''}`;}
-function libraryHTML(){return `<section class="card" id="mf-library-panel"><div class="sectionTitle"><h2>Ingredient library</h2><button id="mf-library-close">Close</button></div><p>Edit your staples or add a nutrition label. Changes apply to future additions; saved meals keep their own nutrition values.</p><input id="mf-library-search" type="search" placeholder="Find an ingredient" aria-label="Search ingredient library"><button id="mf-library-new" class="mf-add">+ Create / scan ingredient</button><div id="mf-library-list">${libraryRows('')}</div></section>`;}
+function libraryHTML(){return `<details class="card mf-library-settings" id="mf-library-panel" ${libraryOpen?'open':''}><summary>Ingredient library <small>View, add & edit nutrition</small></summary><p>Edit your staples or add a nutrition label. Changes apply to future additions; saved meals keep their own nutrition values.</p><input id="mf-library-search" type="search" placeholder="Find an ingredient" aria-label="Search ingredient library"><button id="mf-library-new" class="mf-add">+ Create / scan ingredient</button><div id="mf-library-list">${libraryRows('')}</div></details>`;}
 function libraryRows(query){return catalogue().filter(f=>matches(f,query)).map(f=>`<div class="mf-library-row"><div><b>${e(title(f))}</b><small>${show(f.kcal)} kcal · ${show(f.protein)} g protein / 100 ${unit(f)}</small><small>${e(f.sourceStatus||'Custom / original entry')}${f.userEdited?' · edited':''}</small></div><div><button data-mf-food="${f.ref}">Edit</button>${f.ref.startsWith('c:')?`<button data-mf-food-delete="${f.ref}">Delete</button>`:''}</div></div>`).join('')||'<p>No matching ingredient. Create one above.</p>';}
 let dialog=null,lastFocus=null,scanId=0;
 function closeDialog(){scanId++;dialog?.close();dialog?.remove();dialog=null;lastFocus?.focus();}
@@ -710,14 +714,27 @@ function modal(title,content){
  closeDialog();lastFocus=document.activeElement;dialog=document.createElement('dialog');dialog.className='mf-dialog';dialog.innerHTML=`<div class="mf-modal-head"><h2>${e(title)}</h2><button id="mf-close" aria-label="Close dialog">×</button></div>${content}`;
  document.body.appendChild(dialog);dialog.showModal();dialog.querySelector('#mf-close').onclick=closeDialog;dialog.addEventListener('cancel',ev=>{ev.preventDefault();closeDialog();});return dialog;
 }
-function picker(){
- const el=modal('Add ingredient',`<input id="mf-search" autofocus type="search" placeholder="Search paneer, milk, atta…" aria-label="Search ingredients"><div id="mf-results"></div><button id="mf-create" class="mf-add">+ New ingredient / scan label</button>`);
- const search=()=>{
-  const q=el.querySelector('#mf-search').value.trim(),matches=catalogue().filter(f=>matches(f,q));
-  el.querySelector('#mf-results').innerHTML=matches.map(f=>`<button class="mf-result" data-mf-pick="${f.ref}"><span><b>${e(title(f))}</b><small>${show(f.kcal)} kcal · ${show(f.protein)} g protein / 100 ${unit(f)}</small><small>${e(f.sourceStatus||'Custom / original entry')}${f.userEdited?' · edited':''}</small></span><span>+</span></button>`).join('')||'<p>Not found. Add it below; you can leave unknown nutrition blank.</p>';
-  el.querySelectorAll('[data-mf-pick]').forEach(b=>b.onclick=()=>{const f=catalogue().find(f=>f.ref===b.dataset.mfPick);if(changeDraft(d=>d.items.push(snapshot(f)))){closeDialog();render();}});
- };
- el.querySelector('#mf-search').oninput=search;el.querySelector('#mf-create').onclick=()=>ingredientForm(null,null,true,el.querySelector('#mf-search').value.trim());search();
+function searchFoods(query){
+ const q=query.trim().toLowerCase();
+ const score=f=>[f.name,title(f),...(f.aliases||[])].some(n=>n.toLowerCase()===q)?0:title(f).toLowerCase().startsWith(q)?1:2;
+ return catalogue().filter(f=>matches(f,q)).sort((a,b)=>score(a)-score(b));
+}
+function ingredientPickerHTML(){return `<div class="mf-picker"><label for="mf-search">Ingredient</label><div class="mf-combobox"><input id="mf-search" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="mf-results" autocomplete="off" placeholder="Search an ingredient or brand…"><div id="mf-results" class="mf-options" role="listbox" aria-label="Matching ingredients" hidden></div></div><p id="mf-selected-info" class="mf-hint" role="status">Choose the exact ingredient from the dropdown.</p><div class="mf-pick-actions"><label>Amount (<span id="mf-pick-unit">g</span>)<input id="mf-pick-amount" type="number" inputmode="decimal" min="0.1" step="any" value="100" disabled></label><button type="button" id="mf-pick-add" class="primary" disabled>Add ingredient</button></div><button type="button" id="mf-create" class="mf-new-custom">+ Create a new ingredient</button></div>`;}
+function bindPicker(){
+ const input=$('#mf-search');if(!input)return;
+ const results=$('#mf-results'),amount=$('#mf-pick-amount'),add=$('#mf-pick-add'),info=$('#mf-selected-info');
+ let selected=null,found=[],active=-1;
+ const close=()=>{results.hidden=true;input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');active=-1;};
+ const choose=f=>{selected=f;input.value=title(f);amount.value=f.defaultGrams||100;amount.disabled=false;add.disabled=false;$('#mf-pick-unit').textContent=unit(f);info.textContent=show(f.kcal)+' kcal · '+show(f.protein)+' g protein / 100 '+unit(f)+(keys.some(k=>rawN(f,k)===null)?' · incomplete nutrition':'');close();amount.focus();amount.select();};
+ const highlight=()=>{results.querySelectorAll('[role="option"]').forEach((el,i)=>el.setAttribute('aria-selected',String(i===active)));if(active>=0){input.setAttribute('aria-activedescendant','mf-option-'+active);results.querySelector('#mf-option-'+active)?.scrollIntoView({block:'nearest'});}};
+ const search=()=>{found=searchFoods(input.value);active=-1;results.innerHTML=found.length?found.map((f,i)=>`<button type="button" role="option" tabindex="-1" aria-selected="false" id="mf-option-${i}" data-mf-option="${i}"><b>${e(title(f))}</b><small>${show(f.kcal)} kcal · ${show(f.protein)} g protein / 100 ${unit(f)}</small></button>`).join(''):'<p>No matching ingredient. Create a new one below.</p>';results.hidden=false;input.setAttribute('aria-expanded','true');input.removeAttribute('aria-activedescendant');results.querySelectorAll('[data-mf-option]').forEach(b=>b.onclick=()=>choose(found[Number(b.dataset.mfOption)]));};
+ input.oninput=()=>{selected=null;amount.disabled=true;add.disabled=true;info.textContent='Choose the exact ingredient from the dropdown.';search();};
+ input.onfocus=search;
+ input.onkeydown=ev=>{if(ev.key==='Escape'){close();return;}if(['ArrowDown','ArrowUp'].includes(ev.key)){ev.preventDefault();if(results.hidden)search();if(found.length){active=(active+(ev.key==='ArrowDown'?1:-1)+found.length)%found.length;highlight();}}else if(ev.key==='Enter'){ev.preventDefault();if(!results.hidden&&active>=0)choose(found[active]);else if(!results.hidden&&found.length===1)choose(found[0]);}};
+ input.closest('.mf-picker').addEventListener('focusout',ev=>{if(!input.closest('.mf-picker').contains(ev.relatedTarget))close();});
+ add.onclick=()=>{const quantity=number(amount.value);if(!selected)return;if(quantity===null||quantity<=0){amount.focus();return toast('Enter a positive amount');}if(changeDraft(d=>d.items.push(snapshot(selected,quantity)))){render();$('#mf-search')?.focus();}};
+ amount.onkeydown=ev=>{if(ev.key==='Enter'){ev.preventDefault();add.click();}};
+ $('#mf-create').onclick=()=>ingredientForm(null,null,true,selected?'':input.value.trim());
 }
 function ingredientForm(f,ref,addToMeal=false,newName=''){
  const isRow=ref?.startsWith('r:'),builtin=ref?.startsWith('b:'),v=nutrition(f||{name:newName,defaultGrams:100});
@@ -790,31 +807,39 @@ logFood=function(name,amount,meal='Dinner'){
 logPreset=function(index){const p=dinnerPresets[index];if(!p)return;
  if(write(()=>day().food.push(...p[1].map(([name,g])=>({...snapshot(foodDef(name),g),meal:'Dinner'}))))){toast('Dinner added');render();}
 };
+function bindLibrary(){
+ const panel=$('#mf-library-panel');if(!panel)return;
+ panel.addEventListener('toggle',()=>libraryOpen=panel.open);
+ $('#mf-library-new')?.addEventListener('click',()=>ingredientForm(null,null));
+ const bindRows=()=>{ $$('[data-mf-food]').forEach(b=>b.onclick=()=>ingredientForm(catalogue().find(f=>f.ref===b.dataset.mfFood),b.dataset.mfFood)); $$('[data-mf-food-delete]').forEach(b=>b.onclick=()=>{const i=Number(b.dataset.mfFoodDelete.slice(2)),name=state.customFoods[i].name;if(confirm('Remove '+name+' from your library? Saved meals stay unchanged.')&&write(()=>{state.customFoods.splice(i,1);state.recipeNames=state.recipeNames.filter(n=>n!==name);}))render();}); };
+ $('#mf-library-search')?.addEventListener('input',ev=>{$('#mf-library-list').innerHTML=libraryRows(ev.target.value);bindRows();});bindRows();
+}
+const oldSettings=settingsView;
+settingsView=function(){return oldSettings()+libraryHTML();};
 const oldBind=bind;
 foodView=mealView;
 bind=function(){
- oldBind();if(state.tab!=='food')return;
+ oldBind();if(state.tab==='settings'){bindLibrary();return;}if(state.tab!=='food')return;
+ bindPicker();
  $('#mf-new')?.addEventListener('click',()=>makeDraft());
  $('#mf-name')?.addEventListener('input',ev=>changeDraft(d=>d.name=ev.target.value));
  $('#mf-type')?.addEventListener('change',ev=>changeDraft(d=>d.meal=ev.target.value));
  $('#mf-discard')?.addEventListener('click',()=>{if(confirm('Discard this draft? Saved meals stay unchanged.')&&write(()=>delete state.mealDrafts[state.selectedDate]))render();});
- $('#mf-add')?.addEventListener('click',picker);
+ $('#mf-time')?.addEventListener('change',ev=>changeDraft(d=>d.mealTime=ev.target.value));
+ $('#mf-details-form')?.addEventListener('submit',ev=>{ev.preventDefault();const name=$('#mf-name').value.trim(),time=$('#mf-time').value;if(!name||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))return toast('Enter a meal name and time');if(changeDraft(d=>{d.name=name;d.meal=$('#mf-type').value;d.mealTime=time;d.detailsSaved=true;})){render();$('#mf-search')?.focus();}});
+ $('#mf-edit-details')?.addEventListener('click',()=>{if(changeDraft(d=>d.detailsSaved=false))render();});
  $$('[data-mf-weight]').forEach(input=>input.oninput=()=>{const i=Number(input.dataset.mfWeight),g=number(input.value);if(changeDraft(d=>d.items[i].grams=g??0))refreshTotals();});
  $$('[data-mf-nutrition]').forEach(b=>b.onclick=()=>ingredientForm(draft().items[Number(b.dataset.mfNutrition)],'r:'+b.dataset.mfNutrition));
  $$('[data-mf-remove]').forEach(b=>b.onclick=()=>{if(changeDraft(d=>d.items.splice(Number(b.dataset.mfRemove),1)))render();});
  $('#mf-save')?.addEventListener('click',()=>{
   const d=draft();if(!d.name.trim())return toast('Give your meal a name');if(!d.items.length)return toast('Add at least one ingredient');if(d.items.some(x=>!Number.isFinite(x.grams)||x.grams<=0))return toast('Enter a positive weight for every ingredient');
-  if(write(()=>{if(d.editing)day().food=day().food.filter(x=>(x.mealId||'legacy:'+x.meal)!==d.editing);day().food.push(...d.items.map(x=>({...x,mealId:d.id,mealName:d.name.trim(),meal:d.meal,unknownNutrients:keys.filter(k=>rawN(x,k)===null)})));delete state.mealDrafts[state.selectedDate];})){render();toast('Meal saved');}
+  if(write(()=>{if(d.editing)day().food=day().food.filter(x=>(x.mealId||'legacy:'+x.meal)!==d.editing);day().food.push(...d.items.map(x=>({...x,mealId:d.id,mealName:d.name.trim(),meal:d.meal,mealTime:d.mealTime||'',unknownNutrients:keys.filter(k=>rawN(x,k)===null)})));delete state.mealDrafts[state.selectedDate];})){render();toast('Meal saved');}
  });
  $$('[data-mf-edit]').forEach(b=>b.onclick=()=>makeDraft(groups().find(g=>g.id===b.dataset.mfEdit)));
  $$('[data-mf-delete]').forEach(b=>b.onclick=()=>{if(confirm('Delete this meal?')&&write(()=>day().food=day().food.filter(x=>(x.mealId||'legacy:'+x.meal)!==b.dataset.mfDelete)))render();});
- $$('[data-mf-preset]').forEach(b=>b.onclick=()=>{const p=dinnerPresets[Number(b.dataset.mfPreset)];if(draft()&&!confirm('Replace your unfinished draft with this preset?'))return;if(putDraft({id:uid(),name:p[0],meal:'Dinner',items:p[1].map(([name,g])=>snapshot(foodDef(name),g))}))render();});
+ $$('[data-mf-preset]').forEach(b=>b.onclick=()=>{const p=dinnerPresets[Number(b.dataset.mfPreset)];if(draft()&&!confirm('Replace your unfinished draft with this preset?'))return;if(putDraft({id:uid(),name:p[0],meal:'Dinner',mealTime:localTime(),detailsSaved:true,items:p[1].map(([name,g])=>snapshot(foodDef(name),g))}))render();});
  $('#mf-scale')?.addEventListener('click',()=>{const d=draft(),target=Number($('#mf-target').value),t=totals(d.items).kcal;if(!d.items.length||t.missing||!t.value)return toast('Add calories for every ingredient first');if(target<100||target>2000)return toast('Choose a target between 100 and 2,000 kcal');const scale=target/t.value;if(changeDraft(d=>d.items.forEach(x=>x.grams=Math.max(.1,Math.round(x.grams*scale*10)/10)))){render();toast('Suggested weights applied. Review portions before saving.');}});
- $('#mf-library')?.addEventListener('click',()=>{libraryOpen=!libraryOpen;render();$('#mf-library-panel')?.scrollIntoView({behavior:'smooth'});});
- $('#mf-library-close')?.addEventListener('click',()=>{libraryOpen=false;render();});
- $('#mf-library-new')?.addEventListener('click',()=>ingredientForm(null,null));
- const bindLibrary=()=>{ $$('[data-mf-food]').forEach(b=>b.onclick=()=>ingredientForm(catalogue().find(f=>f.ref===b.dataset.mfFood),b.dataset.mfFood)); $$('[data-mf-food-delete]').forEach(b=>b.onclick=()=>{const i=Number(b.dataset.mfFoodDelete.slice(2)),name=state.customFoods[i].name;if(confirm('Remove '+name+' from your library? Saved meals stay unchanged.')&&write(()=>{state.customFoods.splice(i,1);state.recipeNames=state.recipeNames.filter(n=>n!==name);}))render();}); }; 
- $('#mf-library-search')?.addEventListener('input',ev=>{$('#mf-library-list').innerHTML=libraryRows(ev.target.value);bindLibrary();});bindLibrary();
+
 };
 // The dashboard and weekly budget must not imply incomplete calories are complete.
 const oldToday=todayView,oldWeek=weekView;

@@ -1,5 +1,5 @@
-const CACHE = 'cutos-v4-ingredients-20261003';
-const ASSETS = ['./','./index.html','./styles.css','./app.js','./meal-food.js?v=4','./meal-food.css?v=4','./manifest.webmanifest'];
+const CACHE = 'cutos-v5-flow-20261003';
+const ASSETS = ['./','./index.html','./styles.css','./app.js','./meal-food.js?v=5','./meal-food.css?v=5','./manifest.webmanifest'];
 self.addEventListener('install', e => {e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate', e => {e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k.startsWith('cutos-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch', e => {
